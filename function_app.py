@@ -22,12 +22,13 @@ def finance_knn_blob(myblob: func.InputStream):
         import pandas as pd
         import numpy as np
 
-        from sklearn.preprocessing import StandardScaler
+        from sklearn.preprocessing import StandardScaler, OneHotEncoder
         from sklearn.model_selection import train_test_split
         from sklearn.neighbors import KNeighborsRegressor
         from sklearn.compose import ColumnTransformer
         from sklearn.pipeline import Pipeline
-        from sklearn.preprocessing import OneHotEncoder
+        from sklearn.impute import SimpleImputer
+        from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
         from azure.storage.blob import BlobServiceClient
 
@@ -60,12 +61,19 @@ def finance_knn_blob(myblob: func.InputStream):
         logging.info(f"Categóricas: {cat_cols}")
 
         # --------------------------------------------------------
-        # 3. Pipeline de preparação + KNN Regressor
+        # 3. Pipeline com imputação + dummy + zscore + KNN
         # --------------------------------------------------------
         preprocessor = ColumnTransformer(
             transformers=[
-                ("num", StandardScaler(), num_cols),
-                ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols)
+                ("num", Pipeline(steps=[
+                    ("imputer", SimpleImputer(strategy="mean")),
+                    ("scaler", StandardScaler())
+                ]), num_cols),
+
+                ("cat", Pipeline(steps=[
+                    ("imputer", SimpleImputer(strategy="most_frequent")),
+                    ("onehot", OneHotEncoder(handle_unknown="ignore"))
+                ]), cat_cols)
             ]
         )
 
@@ -84,27 +92,44 @@ def finance_knn_blob(myblob: func.InputStream):
         modelo.fit(X_train, y_train)
 
         # --------------------------------------------------------
-        # 5. Gerar previsões para o dataset completo
+        # 5. Previsões + métricas
         # --------------------------------------------------------
-        df["loan_predicted"] = modelo.predict(X)
+        y_pred_all = modelo.predict(X)
+        y_pred_test = modelo.predict(X_test)
 
-        logging.info("Previsões geradas com sucesso.")
+        df["loan_predicted"] = y_pred_all
+
+        # --------- MÉTRICAS ----------
+        mae = mean_absolute_error(y_test, y_pred_test)
+        mse = mean_squared_error(y_test, y_pred_test)
+        rmse = np.sqrt(mse)
+        r2 = r2_score(y_test, y_pred_test)
+
+        logging.info(f"MAE={mae:.4f}, MSE={mse:.4f}, RMSE={rmse:.4f}, R²={r2:.4f}")
 
         # --------------------------------------------------------
-        # 6. Salvar CSV em buffer
+        # 6. Adicionar colunas de métricas no CSV
+        # --------------------------------------------------------
+        df["metric_mae"] = mae
+        df["metric_mse"] = mse
+        df["metric_rmse"] = rmse
+        df["metric_r2"] = r2
+
+        # --------------------------------------------------------
+        # 7. Gerar CSV e enviar para outro container
         # --------------------------------------------------------
         output_csv = df.to_csv(index=False).encode("utf-8")
 
-        # --------------------------------------------------------
-        # 7. Enviar para outro container
-        # --------------------------------------------------------
         conn_str = os.environ["AzureWebJobsStorage"]
         blob_service = BlobServiceClient.from_connection_string(conn_str)
 
         output_container = "dadosprocessados"
         output_name = os.path.basename(myblob.name)
 
-        blob_client = blob_service.get_blob_client(container=output_container, blob=output_name)
+        blob_client = blob_service.get_blob_client(
+            container=output_container,
+            blob=output_name
+        )
 
         blob_client.upload_blob(output_csv, overwrite=True)
 
