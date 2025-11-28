@@ -1,0 +1,26 @@
+name: Upload CSV para Azure
+
+on:
+  push:
+    paths:
+      - 'data/**.csv' 
+
+jobs:
+  enviar-arquivo:
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Checkout do código
+      uses: actions/checkout@v3
+
+    - name: Upload para o Blob Storage
+      uses: azure/CLI@v1
+      with:
+        inlineScript: |
+          cd data
+          az storage blob upload-batch \
+            --account-name projetostorage \
+            --destination dadosbrutos \
+            --source . \
+            --connection-string "${{ secrets.AZURE_CONNECTION_STRING }}" \
+            --pattern "*.csv"
