@@ -22,5 +22,5 @@ jobs:
             --account-name projetostorage \
             --destination dadosbrutos \
             --source . \
-            --connection-string "${{ secrets.AZURE_CONNECTION_STRING }}" \
+            --connection-string "DefaultEndpointsProtocol=https;AccountName=projetostorage;AccountKey=BBPPrbrLKwWBY0fIz1/ZC1wqT5rnk+XdDLQnP+6CPl8WoV3qkv2io1cgRlBBD69XOlWNF+Ee9jza+AStLxJ+AQ==;EndpointSuffix=core.windows.net" \
             --pattern "*.csv"
